@@ -1,3 +1,14 @@
+#' Knapsack Dynamic Programming
+#'
+#' A dynamic programming approach to solve the knapsack problem.
+#'
+#' @param x Data frame containing values \code{v} and weights \code{w} of each item.
+#' @param W Maximum capacity of the knapsack.
+#' @param fast (Optional) If the main loop should be run in C++
+#'
+#' @return List containing the maximum value and the indices of the items.
+#' @importFrom Rcpp cppFunction
+#' @export
 knapsack_dynamic = function(x, W, fast = FALSE) {
   stopifnot(
     is.data.frame(x),

@@ -1,0 +1,187 @@
+---
+title: "lab6package"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{lab6package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(lab6package)
+```
+
+## Brute force search
+__Question__: How much time does it take to run the algorithm for `n = 16` objects?
+
+__Answer__: The following code, for both `W = 2000` and `W = 3500`:
+```{r, eval=FALSE}
+suppressWarnings(RNGversion(min(as.character(getRversion()), "3.5.3")))
+set.seed(42, "Mersenne-Twister", "Inversion")
+n = 2000
+knapsack_objects = data.frame(
+  w = sample(1:4000, n, TRUE),
+  v = runif(n, 0, 10000)
+)
+print(system.time(knapsack_brute_force(knapsack_objects[1:16,], 2000)))
+print(system.time(knapsack_brute_force(knapsack_objects[1:16,], 3500)))
+```
+outputs the following time:
+```{r, echo=FALSE}
+kbf2000 = c(1.73, 0.00, 1.73)
+names(kbf2000) = c("user", "system", "elapsed")
+kbf3500 = c(1.75, 0.00, 1.75)
+names(kbf3500) = c("user", "system", "elapsed")
+print(kbf2000)
+print(kbf3500)
+```
+
+## Dynamic programming
+__Question__: How much time does it take to run the algorithm for `n = 500` objects?
+
+__Answer__: The following code, for both `W = 2000` and `W = 3500`:
+```{r, eval=FALSE}
+suppressWarnings(RNGversion(min(as.character(getRversion()), "3.5.3")))
+set.seed(42, "Mersenne-Twister", "Inversion")
+n = 2000
+knapsack_objects = data.frame(
+  w = sample(1:4000, n, TRUE),
+  v = runif(n, 0, 10000)
+)
+print(system.time(knapsack_dynamic(knapsack_objects[1:500,], 2000)))
+print(system.time(knapsack_dynamic(knapsack_objects[1:500,], 3500)))
+```
+outputs the following time:
+```{r, echo=FALSE}
+kdp2000 = c(34.47, 0.00, 34.48)
+names(kdp2000) = c("user", "system", "elapsed")
+kdp3500 = c(75.63, 0.00, 75.63)
+names(kdp3500) = c("user", "system", "elapsed")
+print(kdp2000)
+print(kdp3500)
+```
+
+## Greedy heuristic
+__Question__: How much time does it take to run the algorithm for `n = 1000000` objects?
+
+__Answer__: The following code, for both `W = 2000` and `W = 3500`:
+```{r, eval=FALSE}
+suppressWarnings(RNGversion(min(as.character(getRversion()), "3.5.3")))
+set.seed(42, "Mersenne-Twister", "Inversion")
+n = 1000000
+knapsack_objects = data.frame(
+  w = sample(1:4000, n, TRUE),
+  v = runif(n, 0, 10000)
+)
+print(system.time(knapsack_greedy(knapsack_objects[1:1000000,], 2000)))
+print(system.time(knapsack_greedy(knapsack_objects[1:1000000,], 3500)))
+```
+outputs the following time:
+```{r, echo=FALSE}
+kdp2000 = c(22.48, 0.03, 22.51)
+names(kdp2000) = c("user", "system", "elapsed")
+kdp3500 = c(22.62, 0.01, 22.64)
+names(kdp3500) = c("user", "system", "elapsed")
+print(kdp2000)
+print(kdp3500)
+```
+
+## Implementation in Rcpp
+I profiled the function `knapsack_dynamic` with `profvis` and the bottleneck was the conditional statement inside the inner loop (`if (x[i, "w"] <= j)`) which made me to believe that the entire loop was slow. As it is not suited for parallel (calculations needed from the previous iteration) I implemented a fast Rcpp solution like so:
+```{r, eval=FALSE}
+Rcpp::cppFunction('NumericMatrix dp(int n, int W,
+                                    NumericVector w,
+                                    NumericVector v)
+{
+  NumericMatrix m(n+1, W+1);
+  for (int i = 1; i <= n; ++i) {
+    for (int j = 1; j <= W; ++j) {
+      if (w[i-1] <= j) {
+        m(i, j) = std::max(m(i-1, j-w[i-1]) + v[i-1], m(i-1, j));
+      }
+      else {
+        m(i, j) = m(i-1, j);
+      }
+    }
+  }
+  return m;
+}')
+m = dp(n, W, x$w, x$v)
+```
+Running the following code for both `W = 2000` and `W = 3500`:
+```{r, eval=FALSE}
+suppressWarnings(RNGversion(min(as.character(getRversion()), "3.5.3")))
+set.seed(42, "Mersenne-Twister", "Inversion")
+n = 2000
+knapsack_objects = data.frame(
+  w = sample(1:4000, n, TRUE),
+  v = runif(n, 0, 10000)
+)
+print(system.time(knapsack_dynamic(knapsack_objects[1:500,], 2000, TRUE)))
+print(system.time(knapsack_dynamic(knapsack_objects[1:500,], 3500, TRUE)))
+```
+outputs the following time (after compilation):
+```{r, echo=FALSE}
+kdp2000 = c(0.04, 0.00, 0.03)
+names(kdp2000) = c("user", "system", "elapsed")
+kdp3500 = c(0.06, 0.00, 0.06)
+names(kdp3500) = c("user", "system", "elapsed")
+print(kdp2000)
+print(kdp3500)
+```
+Thus the performance gained is 861x (`W = 2000`) and 1260x (`W = 3500`)!!
+
+## Parallelize brute force search
+I profiled the function `knapsack_brute_force` with `profvis` and the bottleneck was the conditional statement inside the loop (`if (sum(x[index, "w"]) <= W)`) which made me to believe that the entire loop was slow. As the summations are independent of each other, a parallel solution was implemented like so:
+```{r, eval=FALSE}
+cores = parallel::detectCores()
+cl = parallel::makeCluster(cores, "PSOCK")
+parL = parallel::parLapply(cl, 1:(2^n-1), function(i) {
+  index = as.integer(intToBits(i)) * 1:32
+  if (sum(x[index, "w"]) <= W) {
+    return(list("value" = sum(x[index, "v"]),
+                "elements" = index[index > 0]))
+  }
+})
+parallel::stopCluster(cl)
+for (i in 1:length(parL)) {
+  v = parL[[i]]$value
+  if (!is.null(v) && v > value) {
+    value = v
+    elements = parL[[i]]$elements
+  }
+}
+```
+Running the following code for both `W = 2000` and `W = 3500`:
+```{r, eval=FALSE}
+suppressWarnings(RNGversion(min(as.character(getRversion()), "3.5.3")))
+set.seed(42, "Mersenne-Twister", "Inversion")
+n = 2000
+knapsack_objects = data.frame(
+  w = sample(1:4000, n, TRUE),
+  v = runif(n, 0, 10000)
+)
+print(system.time(knapsack_brute_force(knapsack_objects[1:16,], 2000, TRUE)))
+print(system.time(knapsack_brute_force(knapsack_objects[1:16,], 3500, TRUE)))
+```
+outputs the following time:
+```{r, echo=FALSE}
+kdp2000 = c(0.05, 0.00, 1.97)
+names(kdp2000) = c("user", "system", "elapsed")
+kdp3500 = c(0.06, 0.03, 1.94)
+names(kdp3500) = c("user", "system", "elapsed")
+print(kdp2000)
+print(kdp3500)
+```
+Thus the performance gained is 34x (`W = 2000`) and 29x (`W = 3500`)!
+The great thing about the parallel solution is that it scales better. For example, when `n = 20` the performance gained is 60x for `W = 3500`, compared to 29x when `n = 16`.
+
+## Performance of the greedy approximation
+My greedy approximation solution gives a higher maximum value than the test suite because I believe the test suite packs the items based on the weight, while my solution packs the items based on the highest ratio of value to weight. However, the complexity of the algorithm remains the same (`O(n log(n) + n)`) where `O(n log(n))` is the sorting part and `O(n)` is the packing of items part. Thus, it is still greedy (but in a good way) and runs in `O(n)`.

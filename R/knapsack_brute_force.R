@@ -1,3 +1,14 @@
+#' Knapsack Brute Force
+#'
+#' A brute force (or exhaustive search) solution to the knapsack problem.
+#'
+#' @param x Data frame containing values \code{v} and weights \code{w} of each item.
+#' @param W Maximum capacity of the knapsack.
+#' @param parallel (Optional) If the main loop should be run in parallel
+#'
+#' @return List containing the maximum value and the indices of the items.
+#' @importFrom parallel detectCores makeCluster parLapply stopCluster
+#' @export
 knapsack_brute_force = function(x, W, parallel = FALSE) {
   stopifnot(
     is.data.frame(x),
